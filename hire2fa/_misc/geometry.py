@@ -1,6 +1,6 @@
 import numpy as np
 
-from .mapping import ATOM_MASSES
+import hire2fa as h2f
 
 # //////////////////////////////////////////////////////////////////////////////
 class Geometry:
@@ -16,7 +16,7 @@ class Geometry:
     # --------------------------------------------------------------------------
     @staticmethod
     def calc_center_of_mass(coords: np.ndarray, names = list[str]) -> np.ndarray:
-        masses = np.array([ATOM_MASSES[name[0]] for name in names])
+        masses = np.array([h2f.Mapping.ATOM_MASSES[name[0]] for name in names])
         return np.sum(
             coords * masses[:, np.newaxis],
             axis = 0

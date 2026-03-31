@@ -234,7 +234,7 @@ def plotsave_geometries_correlated(df: pd.DataFrame) -> None:
 
 
 # ------------------------------------------------------------------------------
-def plotshow_detailed_random_subsample(df: pd.DataFrame) -> None:
+def plotshow_detailed(df: pd.DataFrame) -> None:
     df_ref = df[df["atomname"] == REF_DETAILED]
 
     for atomname in NAMES_DETAILED:
@@ -328,7 +328,7 @@ def main():
 
     df_stats = pd.read_csv(PATH_CSV_STATS)
 
-    # plotshow_detailed_random_subsample(df_stats)
+    # plotshow_detailed(df_stats)
 
     plotsave_geometries_correlated(df_stats)
     export_fitted_gaussians_to_csv() # must be called after plotsave_geometries_correlated

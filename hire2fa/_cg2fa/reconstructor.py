@@ -2,18 +2,13 @@ import json
 import numpy as np
 from pathlib import Path
 
-from .pdb_table import PDBTable
-from .residue import Residue
-from .geometry import Geometry
-from .mapping import DIRECT_MAPPING, \
-    MAP_STATSNAME_TO_STANDARDNAME, \
-    NAME_CENTROID as NC
+import hire2fa as h2f
 
 # //////////////////////////////////////////////////////////////////////////////
 class Reconstructor:
     def __init__(self, path_pdb_cg: Path, path_model: Path):
-        pdb = PDBTable.read_pdb(path_pdb_cg)
-        self.chains = Residue.get_pdb_chains(pdb, init_with_cg_data = True)
+        pdb = h2f.PDBTable.read_pdb(path_pdb_cg)
+        self.chains = h2f.Residue.get_pdb_chains(pdb, init_with_cg_data = True)
         self.residues = [r for chain in self.chains for r in chain]
 
         model_raw: dict[str, list] = json.loads(path_model.read_text())
@@ -24,7 +19,7 @@ class Reconstructor:
         }
 
         for name,lst in model_raw.items():
-            translated = MAP_STATSNAME_TO_STANDARDNAME[name]
+            translated = h2f.Mapping.MAP_STATSNAME_TO_STANDARDNAME[name]
             if   name.startswith("bu"): key = 'U'
             elif name.startswith("bc"): key = 'C'
             elif name.startswith("ba"): key = 'A'
@@ -44,7 +39,7 @@ class Reconstructor:
 
     # --------------------------------------------------------------------------
     def export_reconstructed(self, path_pdb_fa: Path) -> None:
-        out = PDBTable.join(r.fa_data for r in self.residues)
+        out = h2f.PDBTable.join(r.fa_data for r in self.residues)
         out.normalize_indices()
         out.write_pdb(path_pdb_fa)
 
@@ -52,9 +47,9 @@ class Reconstructor:
     # --------------------------------------------------------------------------
     def _apply_direct_mappings(self) -> None:
         """Starts populating `fa_data` with some direct mappings from `cg_data`."""
-        centroids = [NC(1), NC(2)]
+        centroids = [h2f.Mapping.name_centroid(1), h2f.Mapping.name_centroid(2)]
         for residue in self.residues:
-            for i,(cg_name, fa_name) in enumerate(DIRECT_MAPPING):
+            for i,(cg_name, fa_name) in enumerate(h2f.Mapping.iter_direct_mapping()):
                 if cg_name == "P" and residue.is_5terminus: continue
                 if fa_name in centroids and cg_name[0] != residue.resname[0]: continue
 
@@ -77,7 +72,7 @@ class Reconstructor:
             [residue.copy() for residue in chain]
             for chain in self.chains
         ]
-        Residue.apply_o3_shift(chains_shift, do_cg = False)
+        h2f.Residue.apply_o3_shift(chains_shift, do_cg = False)
         residues_shift = [r for chain in chains_shift for r in chain]
 
         names_phosph = ("O3'", "P", "O5'")
@@ -91,26 +86,26 @@ class Reconstructor:
 
     # ------------------------------------------------------------------------------
     def _reconstruct_backbone_and_sugar(self) -> None:
-        def get_coords(r: Residue, atomname: str) -> np.ndarray | None:
+        def get_coords(r: h2f.Residue, atomname: str) -> np.ndarray | None:
             return r.fa_data.copy_filtered(atomname = atomname).get_coords_array()[0]
 
         def infer_posits(refs: list[np.ndarray], variants: list[int]):
             pos_o5, pos_c1, pos_c4 = refs
             v_c5, v_o4, v_c3, v_c2, v_o2 = variants
 
-            geo_c5 = Geometry(pos_c1, pos_c4, pos_o5)
+            geo_c5 = h2f.Geometry(pos_c1, pos_c4, pos_o5)
             pos_c5 = self._get_new_pos(geo_c5, "C5'", v_c5)
 
-            geo_o4 = Geometry(pos_c5, pos_c4, pos_c1)
+            geo_o4 = h2f.Geometry(pos_c5, pos_c4, pos_c1)
             pos_o4 = self._get_new_pos(geo_o4, "O4'", v_o4)
 
-            geo_c3 = Geometry(pos_o5, pos_c4, pos_c1)
+            geo_c3 = h2f.Geometry(pos_o5, pos_c4, pos_c1)
             pos_c3 = self._get_new_pos(geo_c3, "C3'", v_c3)
 
-            geo_o2 = Geometry(pos_c4, pos_o4, pos_c1)
+            geo_o2 = h2f.Geometry(pos_c4, pos_o4, pos_c1)
             pos_c2 = self._get_new_pos(geo_o2, "C2'", v_c2)
 
-            geo_o2 = Geometry(pos_c4, pos_c1, pos_c2)
+            geo_o2 = h2f.Geometry(pos_c4, pos_c1, pos_c2)
             pos_o2 = self._get_new_pos(geo_o2, "O2'", v_o2)
 
             return pos_c5, pos_o4, pos_c3, pos_c2, pos_o2
@@ -189,55 +184,57 @@ class Reconstructor:
 
     # --------------------------------------------------------------------------
     def _reconstruct_nitro_base(self) -> None:
-        def rec(residue: Residue, name_target: str, names_ref: tuple[str, str, str]):
+        nc: callable = h2f.Mapping.name_centroid
+
+        def rec(residue: h2f.Residue, name_target: str, names_ref: tuple[str, str, str]):
             geo_ref = residue.init_fa_geometries(*names_ref)
             pos_new = self._get_new_pos(geo_ref, name_target, 0, restype = residue.restype)
             self._reconstruct_fa_particle(residue, name_target, pos_new)
 
         def reconstruct_u():
-            rec(residue, "C6", (  "P", "C1'", NC(1)))
-            rec(residue, "N1", ("C1'", NC(1),  "C6"))
-            rec(residue, "C2", ( "C6",  "N1", NC(1)))
-            rec(residue, "O2", ( "C6",  "N1", NC(1)))
-            rec(residue, "N3", ( "C6",  "N1", NC(1)))
-            rec(residue, "C4", ( "N1",  "C6", NC(1)))
-            rec(residue, "O4", (NC(1),  "N3",  "C4"))
-            rec(residue, "C5", ( "N1",  "C6", NC(1)))
+            rec(residue, "C6", (  "P", "C1'", nc(1)))
+            rec(residue, "N1", ("C1'", nc(1),  "C6"))
+            rec(residue, "C2", ( "C6",  "N1", nc(1)))
+            rec(residue, "O2", ( "C6",  "N1", nc(1)))
+            rec(residue, "N3", ( "C6",  "N1", nc(1)))
+            rec(residue, "C4", ( "N1",  "C6", nc(1)))
+            rec(residue, "O4", (nc(1),  "N3",  "C4"))
+            rec(residue, "C5", ( "N1",  "C6", nc(1)))
 
         def reconstruct_c():
-            rec(residue, "C6", ("C4'", "C1'", NC(1)))
-            rec(residue, "N1", ("C1'", NC(1),  "C6"))
-            rec(residue, "C2", ( "C6",  "N1", NC(1)))
-            rec(residue, "O2", ( "C6",  "N1", NC(1)))
-            rec(residue, "N3", ( "C6",  "N1", NC(1)))
-            rec(residue, "C4", ( "N1",  "C6", NC(1)))
-            rec(residue, "N4", (NC(1),  "N3",  "C4"))
-            rec(residue, "C5", ( "N1",  "C6", NC(1)))
+            rec(residue, "C6", ("C4'", "C1'", nc(1)))
+            rec(residue, "N1", ("C1'", nc(1),  "C6"))
+            rec(residue, "C2", ( "C6",  "N1", nc(1)))
+            rec(residue, "O2", ( "C6",  "N1", nc(1)))
+            rec(residue, "N3", ( "C6",  "N1", nc(1)))
+            rec(residue, "C4", ( "N1",  "C6", nc(1)))
+            rec(residue, "N4", (nc(1),  "N3",  "C4"))
+            rec(residue, "C5", ( "N1",  "C6", nc(1)))
 
         def reconstruct_a():
-            rec(residue, "N9", ("C1'", NC(2), NC(1)))
-            rec(residue, "C4", ( "N9", NC(2), NC(1)))
-            rec(residue, "N3", ( "N9", NC(1), NC(2)))
-            rec(residue, "C2", ( "N9", NC(1), NC(2)))
-            rec(residue, "N1", ( "N9", NC(1), NC(2)))
-            rec(residue, "C6", ( "N9", NC(1), NC(2)))
-            rec(residue, "N6", ( "N9", NC(1), NC(2)))
-            rec(residue, "C5", ( "N9", NC(1), NC(2)))
-            rec(residue, "N7", ( "N9", NC(2), NC(1)))
-            rec(residue, "C8", (NC(2), NC(1),  "N9"))
+            rec(residue, "N9", ("C1'", nc(2), nc(1)))
+            rec(residue, "C4", ( "N9", nc(2), nc(1)))
+            rec(residue, "N3", ( "N9", nc(1), nc(2)))
+            rec(residue, "C2", ( "N9", nc(1), nc(2)))
+            rec(residue, "N1", ( "N9", nc(1), nc(2)))
+            rec(residue, "C6", ( "N9", nc(1), nc(2)))
+            rec(residue, "N6", ( "N9", nc(1), nc(2)))
+            rec(residue, "C5", ( "N9", nc(1), nc(2)))
+            rec(residue, "N7", ( "N9", nc(2), nc(1)))
+            rec(residue, "C8", (nc(2), nc(1),  "N9"))
 
         def reconstruct_g():
-            rec(residue, "N9", ("C1'", NC(2), NC(1)))
-            rec(residue, "C4", ( "N9", NC(2), NC(1)))
-            rec(residue, "N3", ( "N9", NC(1), NC(2)))
-            rec(residue, "C2", ( "N9", NC(1), NC(2)))
-            rec(residue, "N2", ( "N9", NC(1), NC(2)))
-            rec(residue, "N1", ( "N9", NC(1), NC(2)))
-            rec(residue, "C6", ( "N9", NC(1), NC(2)))
-            rec(residue, "O6", ( "N9", NC(1), NC(2)))
-            rec(residue, "C5", ( "N9", NC(1), NC(2)))
-            rec(residue, "N7", ( "N9", NC(2), NC(1)))
-            rec(residue, "C8", (NC(2), NC(1),  "N9"))
+            rec(residue, "N9", ("C1'", nc(2), nc(1)))
+            rec(residue, "C4", ( "N9", nc(2), nc(1)))
+            rec(residue, "N3", ( "N9", nc(1), nc(2)))
+            rec(residue, "C2", ( "N9", nc(1), nc(2)))
+            rec(residue, "N2", ( "N9", nc(1), nc(2)))
+            rec(residue, "N1", ( "N9", nc(1), nc(2)))
+            rec(residue, "C6", ( "N9", nc(1), nc(2)))
+            rec(residue, "O6", ( "N9", nc(1), nc(2)))
+            rec(residue, "C5", ( "N9", nc(1), nc(2)))
+            rec(residue, "N7", ( "N9", nc(2), nc(1)))
+            rec(residue, "C8", (nc(2), nc(1),  "N9"))
 
         for residue in self.residues:
             match residue.restype:
@@ -250,14 +247,14 @@ class Reconstructor:
     # --------------------------------------------------------------------------
     def _drop_temp_particles(self) -> None:
         for residue in self.residues:
-            residue.fa_data.pop_filtered(atomname = NC(1))
+            residue.fa_data.pop_filtered(atomname = h2f.Mapping.name_centroid(1))
             if residue.restype not in ("A", "G"): continue
-            residue.fa_data.pop_filtered(atomname = NC(2))
+            residue.fa_data.pop_filtered(atomname = h2f.Mapping.name_centroid(2))
 
 
     # --------------------------------------------------------------------------
     def _get_new_pos(self,
-        geo_ref: Geometry, fa_name_target: str,
+        geo_ref: h2f.Geometry, fa_name_target: str,
         idx_variant: int, restype: str = '_',
     ) -> np.ndarray:
 
@@ -271,12 +268,12 @@ class Reconstructor:
 
     # --------------------------------------------------------------------------
     def _reconstruct_fa_particle(self,
-        residue_orig: Residue,
+        residue_orig: h2f.Residue,
         fa_name_target: str,
         new_pos: np.ndarray | None,
     ) -> None:
         if new_pos is None: return
-        particle = PDBTable(sections = {
+        particle = h2f.PDBTable(sections = {
             "atomid"  : (str(len(residue_orig.fa_data)),),
             "atomname": (fa_name_target,),
             "element" : (fa_name_target[0],),

@@ -2,4 +2,7 @@
 desktop.ini
 **/__pycache__/
 
-testdata/
+testdata/stats.csv
+testdata/dataset_fa/
+testdata/plots/
+testdata/examples/*.hire2fa.pdb

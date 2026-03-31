@@ -1,10 +1,8 @@
-from .pdb_table import PDBTable
-from .mapping import EXPECTED_CG_BEADS, KNOWN_RESIDUES
-from .geometry import Geometry
+import hire2fa as h2f
 
 # //////////////////////////////////////////////////////////////////////////////
 class Residue:
-    def __init__(self, data: PDBTable, init_with_cg_data: bool = True):
+    def __init__(self, data: h2f.PDBTable, init_with_cg_data: bool = True):
         assert len(data) > 0, "Empty residue"
 
         self.resname: str = data.safe_get_first_value("resname").upper()
@@ -16,16 +14,16 @@ class Residue:
         self.is_5terminus = self.resname.endswith("5")
         self.restype: str = self.resname[0].upper() # U / C / A / G
 
-        self.cg_bead_names = EXPECTED_CG_BEADS[self.restype].copy()
+        self.cg_bead_names = h2f.Mapping.EXPECTED_CG_BEADS[self.restype].copy()
         if self.is_5terminus: self.cg_bead_names.remove("P")
 
         if init_with_cg_data:
-            self.fa_data = PDBTable()
+            self.fa_data = h2f.PDBTable()
             self.cg_data = data
             self._assert_cg_residue()
         else:
             self.fa_data = data
-            self.cg_data = PDBTable()
+            self.cg_data = h2f.PDBTable()
 
         self.fa_data.sort()
         self.cg_data.sort()
@@ -33,9 +31,9 @@ class Residue:
 
     # --------------------------------------------------------------------------
     @classmethod
-    def get_pdb_residues(cls, pdb_table: PDBTable, init_with_cg_data: bool = True) -> list["Residue"]:
+    def get_pdb_residues(cls, pdb_table: h2f.PDBTable, init_with_cg_data: bool = True) -> list["Residue"]:
         """
-        Splits a `PDBTable` into a list of `Residue` objects, one for each chain and residue.
+        Splits a `h2f.PDBTable` into a list of `Residue` objects, one for each chain and residue.
         The residues are sorted by their `chainid` and `resid` sections.
         """
         return [
@@ -46,9 +44,9 @@ class Residue:
 
     # --------------------------------------------------------------------------
     @classmethod
-    def get_pdb_chains(cls, pdb_table: PDBTable, init_with_cg_data: bool = True) -> list[list["Residue"]]:
+    def get_pdb_chains(cls, pdb_table: h2f.PDBTable, init_with_cg_data: bool = True) -> list[list["Residue"]]:
         """
-        Splits a `PDBTable` into a list of lists of `Residue` objects.
+        Splits a `h2f.PDBTable` into a list of lists of `Residue` objects.
         A list of residues represents a different chain.
         The residues are sorted by their `chainid` and `resid` sections.
         """
@@ -99,13 +97,13 @@ class Residue:
 
 
     # --------------------------------------------------------------------------
-    def get_data(self, do_cg: bool) -> PDBTable:
+    def get_data(self, do_cg: bool) -> h2f.PDBTable:
         """Returns either `cg_data` or `fa_data` depending on the value of `do_cg`."""
         return self.cg_data if do_cg else self.fa_data
 
     # --------------------------------------------------------------------------
-    def get_functional_group(self, atomnames: list[str]) -> PDBTable:
-        return PDBTable.join(
+    def get_functional_group(self, atomnames: list[str]) -> h2f.PDBTable:
+        return h2f.PDBTable.join(
             self.fa_data.copy_filtered(atomname = name)
             for name in atomnames
         )
@@ -127,7 +125,7 @@ class Residue:
 
 
     # --------------------------------------------------------------------------
-    def init_fa_geometries(self, name_0: str, name_1: str, name_2: str) -> Geometry:
+    def init_fa_geometries(self, name_0: str, name_1: str, name_2: str) -> h2f.Geometry:
         tab_0 = self.fa_data.copy_filtered(atomname = name_0)
         tab_1 = self.fa_data.copy_filtered(atomname = name_1)
         tab_2 = self.fa_data.copy_filtered(atomname = name_2)
@@ -136,11 +134,11 @@ class Residue:
         coords_0 = tab_0.get_coords_array()[0]
         coords_1 = tab_1.get_coords_array()[0]
         coords_2 = tab_2.get_coords_array()[0]
-        return Geometry(coords_0, coords_1, coords_2)
+        return h2f.Geometry(coords_0, coords_1, coords_2)
 
 
     # --------------------------------------------------------------------------
-    def calc_geometry_values(self, geometry: Geometry | None, name: str) -> Geometry | None:
+    def calc_geometry_values(self, geometry: h2f.Geometry | None, name: str) -> h2f.Geometry | None:
         if geometry is None: return
 
         tab = self.fa_data.copy_filtered(atomname = name)
@@ -151,11 +149,11 @@ class Residue:
 
 
     # --------------------------------------------------------------------------
-    def _assert_generic_residue(self, data: PDBTable) -> PDBTable:
+    def _assert_generic_residue(self, data: h2f.PDBTable) -> h2f.PDBTable:
         if any(r != self.resname for r in data.sections["resname"]):
             raise ValueError("Inconsistent residue names in the same residue")
 
-        if self.resname not in KNOWN_RESIDUES:
+        if self.resname not in h2f.Mapping.KNOWN_RESIDUES:
             raise ValueError(f"Unknown residue name: {self.resname}")
 
         particle_names = set(data.sections["atomname"])

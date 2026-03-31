@@ -1,14 +1,13 @@
 import numpy as np
 from pathlib import Path
 
-from .utils import argsort, slice_tuple
-from .pdb_constants import SECTION_NAMES, extract_section, export_row
+import hire2fa as h2f
 
 # //////////////////////////////////////////////////////////////////////////////
 class PDBTable:
     def __init__(self, sections: dict[str, tuple[str]] = None):
         self.sections = {
-            name: tuple() for name in SECTION_NAMES
+            name: tuple() for name in h2f.PDBConstants.SECTION_NAMES
         } if sections is None else sections.copy()
 
     # --------------------------------------------------------------------------
@@ -48,15 +47,15 @@ class PDBTable:
         ### current sections: atomid / atomname / resname / chainid / resid / xcoords / ycoords / zcoords
         ### when exporting...:atomid / atomname / resname / chainid / resid / xcoords / ycoords / zcoords / segid / element
         sections: dict[str, tuple[str]] = {
-            name: tuple(extract_section(line, name) for line in data)
-            for name in SECTION_NAMES
+            name: tuple(h2f.PDBConstants.extract_section(line, name) for line in data)
+            for name in h2f.PDBConstants.SECTION_NAMES
         }
         return cls(sections)
 
     # --------------------------------------------------------------------------
     def write_pdb(self, path_pdb: str | Path) -> None:
         out = '\n'.join(
-            export_row(self.sections, i) for i in range(len(self))
+            h2f.PDBConstants.export_row(self.sections, i) for i in range(len(self))
         )
         with open(path_pdb, 'w') as file:
             file.write(out)
@@ -66,7 +65,7 @@ class PDBTable:
     def append_line(self, line: str) -> None:
         """Appends an extra element for every section. Data is extracted from the `line` provided."""
         for section in self.sections.keys():
-            self.sections[section] += (extract_section(line, section),)
+            self.sections[section] += (h2f.PDBConstants.extract_section(line, section),)
 
     # --------------------------------------------------------------------------
     def append_table(self, other: "PDBTable") -> None:
@@ -117,14 +116,14 @@ class PDBTable:
     # --------------------------------------------------------------------------
     def sort(self) -> None:
         """Sort every section by using the `atomid` section as sorting reference"""
-        self.slice_sections(idxs = argsort(self.sections["atomid"]))
+        self.slice_sections(idxs = h2f.Utils.argsort(self.sections["atomid"]))
 
 
     # --------------------------------------------------------------------------
     def slice_sections(self, idxs: list[int] | tuple[int]):
         """In-place slice of every section by using a list of indices"""
         for k,tup in self.sections.items():
-            self.sections[k] = slice_tuple(tup, idxs)
+            self.sections[k] = tuple(tup[i] for i in idxs)
 
 
     # --------------------------------------------------------------------------
