@@ -1,8 +1,11 @@
 from setuptools import setup, find_packages
+from pathlib import Path
+
+exec(Path("hire2fa/_version.py").read_text())
 
 setup(
     name="hire2fa",
-    version="0.1.0",
+    version=__version__,
     description="Utility for converting from HiRE coarse grained model to all-atom structures.",
     keywords="HiRE RNA coarse-grained all-atom pdb molecular dynamics md",
     long_description=open("README.md").read(),

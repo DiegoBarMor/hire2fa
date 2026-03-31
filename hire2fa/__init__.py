@@ -1,3 +1,5 @@
+from ._version import __version__
+
 from ._misc.utils import Utils
 from ._misc.geometry import Geometry
 

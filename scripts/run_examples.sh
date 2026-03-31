@@ -1,12 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-### Re-install the package locally
+### Run example conversions
 if [ ! -d "scripts" ]; then
     echo "Error: script must be run in the repository root directory (where setup.py is located)."
     exit 1
 fi
 
-pip uninstall hire2fa -y || true
-pip install .
-rm -rf build hire2fa.egg-info
+hire2fa testdata/examples/1akx.cg.pdb testdata/examples/1akx.hire2fa.pdb
