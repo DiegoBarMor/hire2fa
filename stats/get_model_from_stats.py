@@ -42,8 +42,8 @@ PEAK_WIDTH_SIGMAS = {
     "bgN9": 8, "bgC4": 8, "bgN3": 8, "bgC2": 8, "bgN2": 8, "bgN1": 8, "bgC6": 8, "bgO6": 8, "bgC5": 8, "bgN7": 8, "bgC8": 8,
 }
 
-NAMES_DETAILED = ["c5", "c3", "c2", "o2", "o4"]
-REF_DETAILED = "c5"
+NAMES_CORRELATIONS = ["c5", "c3", "c2", "o2", "o4"]
+REF_CORRELATION = "c5"
 
 NAMES_FIX_PERIODICITY = [ # dihedral peaks that get cut at the -pi|pi boundary
     "buC2", "buC4", "buC5", "buN3", "buO2", "buO4",
@@ -80,9 +80,7 @@ def _calc_gaussian(x, normalization, mu, sigma):
 
 
 # ------------------------------------------------------------------------------
-def _fit_gaussians(
-    hist1d, resname: str, atomname: str, geometry: str, report_fitting: bool
-) -> tuple[float, float, float]:
+def _fit_gaussians(hist1d, atomname: str, geometry: str) -> tuple[float, float, float]:
     points,xedges = hist1d
     _fix_periodicity(atomname, geometry, points)
 
@@ -95,11 +93,10 @@ def _fit_gaussians(
     normalization, mu, sigma = result.x
     sigma = abs(sigma)
 
-    if report_fitting:
-        print(f"...>>> Fitted Gaussian ({resname}, {atomname}, {geometry}): normalization={normalization:.2f}, mu={mu:.2f}, sigma={sigma:.2f}")
-        ### 0 is a placeholder for the variant index
-        BUFFER_OUT.append((atomname, geometry, 0, normalization, mu, sigma))
-
+    print(f"...>>> Fitted Gaussian ({atomname}, {geometry}): normalization={normalization:.2f}, mu={mu:.2f}, sigma={sigma:.2f}")
+    BUFFER_OUT.append( #     0 is a placeholder for the variant index
+        (atomname, geometry, 0, normalization, mu, sigma)
+    )
     return normalization, mu, sigma
 
 
@@ -157,10 +154,7 @@ def _normalize_2dhist(
 
 ################### HISTOGRAM 1D PLOTS ###################
 # ------------------------------------------------------------------------------
-def _plotsave_histogram1d(
-    hist1d, resname: str, atomname: str, geometry: str,
-    report_fitting: bool
-) -> None:
+def _plotsave_histogram1d(hist1d, atomname: str, geometry: str) -> None:
     points,xedges = hist1d
     points_max = points.max()
     points = points.astype(float) / points_max
@@ -173,9 +167,7 @@ def _plotsave_histogram1d(
     for _ in range(max_iters):
         if np.all(hist1d[0] < THRESHOLD_PEAK_HEIGHT[atomname] * points_max): break
 
-        norm, mu, sigma = _fit_gaussians(
-            hist1d, resname, atomname, geometry, report_fitting
-        )
+        norm, mu, sigma = _fit_gaussians(hist1d, atomname, geometry)
         x = np.linspace(*RANGES[geometry], NBINS[geometry])
         g = _calc_gaussian(x, norm, mu, sigma)
         g *= norm / (points_max * g.max())
@@ -186,11 +178,10 @@ def _plotsave_histogram1d(
         hist1d[0][mask] = 0
         plt.plot(x, g, linestyle = "--", linewidth = 1.5, label = "gaussian fit")
 
-    plt.title(f"{resname}: {atomname} ({geometry})")
+    plt.title(f"{atomname} ({geometry})")
     plt.legend()
 
-    folder_name = "merged" if resname == "all" else "individual"
-    plt.savefig(FOLDER_PLOTS / f"{folder_name}_{geometry}" / f"{atomname}.{resname}.png", dpi = 300)
+    plt.savefig(FOLDER_PLOTS / f"hists_{geometry}" / f"{atomname}.png", dpi = 300)
     plt.close()
 
 
@@ -211,7 +202,7 @@ def _plotsave_histogram2d_hmap(hist2d, atomname: str, geo_0: str, geo_1: str) ->
 
 ################### MAIN FUNCTIONS ###################
 # ------------------------------------------------------------------------------
-def plotsave_geometries_correlated(df: pd.DataFrame) -> None:
+def plotsave_geometries(df: pd.DataFrame) -> None:
     print(">>> Plotting histograms...")
     for atomname in STATS_NAMES:
         df_atomname = df[df["atomname"] == atomname]
@@ -220,25 +211,21 @@ def plotsave_geometries_correlated(df: pd.DataFrame) -> None:
         ##### 1D HISTOGRAMS #####
         histograms = _get_histograms_1d(df_atomname)
         for geometry in ["dist", "angle", "dihed"]:
-            _plotsave_histogram1d(
-                histograms[geometry], "all", atomname, geometry,
-                report_fitting = True
-            )
+            _plotsave_histogram1d(histograms[geometry], atomname, geometry)
 
         ##### 2D HISTOGRAMS #####
         hist_dist_angle, hist_dist_dihed, hist_angle_dihed = _get_histograms_2d(df_atomname)
-
         _plotsave_histogram2d_hmap(hist_dist_angle,  atomname,  "dist", "angle")
         _plotsave_histogram2d_hmap(hist_dist_dihed,  atomname,  "dist", "dihed")
         _plotsave_histogram2d_hmap(hist_angle_dihed, atomname, "angle", "dihed")
 
 
 # ------------------------------------------------------------------------------
-def plotshow_detailed(df: pd.DataFrame) -> None:
-    df_ref = df[df["atomname"] == REF_DETAILED]
+def plotshow_correlations(df: pd.DataFrame) -> None:
+    df_ref = df[df["atomname"] == REF_CORRELATION]
 
-    for atomname in NAMES_DETAILED:
-        if atomname == REF_DETAILED: continue
+    for atomname in NAMES_CORRELATIONS:
+        if atomname == REF_CORRELATION: continue
 
         arr_ref = df_ref["dihed"].values
         df_atomname = df[df["atomname"] == atomname]
@@ -257,15 +244,15 @@ def plotshow_detailed(df: pd.DataFrame) -> None:
         points , extent = _normalize_2dhist(hist, atomname)
         plt.figure()
         plt.imshow(points, extent = extent, aspect = "auto", origin = "lower")
-        plt.xlabel(REF_DETAILED)
+        plt.xlabel(REF_CORRELATION)
         plt.ylabel(atomname)
-        plt.title(f"Dihed: {REF_DETAILED} vs {atomname}")
+        plt.title(f"Dihed: {REF_CORRELATION} vs {atomname}")
     plt.show()
 
 
 # ------------------------------------------------------------------------------
 def export_fitted_gaussians_to_csv() -> None:
-    """Must be called after `plotsave_geometries_correlated` (relies on `BUFFER_OUT`)"""
+    """Must be called after `plotsave_geometries` (relies on `BUFFER_OUT`)"""
     header = "atomname,geometry,variant,normalization,mu,sigma"
     buffer = [list(buf) for buf in BUFFER_OUT]
 
@@ -288,28 +275,23 @@ def export_fitted_gaussians_to_csv() -> None:
 
 # ------------------------------------------------------------------------------
 def pack_model_to_json() -> dict:
-    def get_geometry_weight_pairs(df: pd.DataFrame, geometry: str) -> list[tuple[float, float]]:
-        return [
-            (round(row["mu"], 3), row["normalization"])
+    def iter_geometries(df: pd.DataFrame, geometry: str):
+        return (
+            round(row["mu"], 3)
             for _, row in df[df["geometry"] == geometry].iterrows()
-        ]
+        )
 
     model = {}
     df = pd.read_csv(PATH_CSV_MODEL)
     for atomname in df["atomname"].unique():
         df_atomname = df[df["atomname"] == atomname]
-        pairs_dist  = get_geometry_weight_pairs(df_atomname, "dist")
-        pairs_angle = get_geometry_weight_pairs(df_atomname, "angle")
-        pairs_dihed = get_geometry_weight_pairs(df_atomname, "dihed")
+        dist  = next(iter_geometries(df_atomname, "dist"))
+        angle = next(iter_geometries(df_atomname, "angle"))
 
-        dist_m,  _ = pairs_dist[0]
-        angle_m, _ = pairs_angle[0]
-        sum_dws = sum(dihed_w for _,dihed_w in pairs_dihed)
         model[atomname] = [
             ### hardcoded assumption all entries consider only one unique "dist" peak and one unique "angle" peak
             ### so the entry's probability is only controlled by the dihedral variants
-            [dihed_w/sum_dws, dist_m, angle_m, dihed_mu]
-            for dihed_mu,dihed_w in pairs_dihed
+            [dist, angle, dihed_mu] for dihed_mu in iter_geometries(df_atomname, "dihed")
         ]
 
     with open(PATH_JSON_MODEL, 'w') as file:
@@ -320,7 +302,7 @@ def pack_model_to_json() -> dict:
 def main():
     FOLDER_PLOTS.mkdir(exist_ok = True)
     for geometry in ["dist", "angle", "dihed"]:
-        (FOLDER_PLOTS / f"merged_{geometry}").mkdir(exist_ok = True)
+        (FOLDER_PLOTS / f"hists_{geometry}").mkdir(exist_ok = True)
 
     (FOLDER_PLOTS / f"hmaps_dist_angle").mkdir(exist_ok = True)
     (FOLDER_PLOTS / f"hmaps_dist_dihed").mkdir(exist_ok = True)
@@ -328,10 +310,10 @@ def main():
 
     df_stats = pd.read_csv(PATH_CSV_STATS)
 
-    # plotshow_detailed(df_stats)
+    # plotshow_correlations(df_stats)
 
-    plotsave_geometries_correlated(df_stats)
-    export_fitted_gaussians_to_csv() # must be called after plotsave_geometries_correlated
+    plotsave_geometries(df_stats)
+    export_fitted_gaussians_to_csv() # must be called after plotsave_geometries
     pack_model_to_json()
 
 

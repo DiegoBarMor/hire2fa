@@ -261,8 +261,7 @@ class Reconstructor:
         this_model = self.model[restype][fa_name_target]
         if geo_ref is None: return
 
-        _, dist, angle, dihed = this_model[idx_variant]
-        geo_ref.set_geo(dist, angle, dihed)
+        geo_ref.set_geo(*this_model[idx_variant])
         return geo_ref.infer_fourth_particle()
 
 
